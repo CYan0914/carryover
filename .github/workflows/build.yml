@@ -1,0 +1,149 @@
+name: Build Carryover
+
+# Compile check and unit tests only.
+#
+# There is deliberately no archive job yet: the App ID and the StoreKit product
+# do not exist in App Store Connect, so a signed build would fail on something
+# that is not a code problem. Add that job once the bundle id is registered.
+#
+# Every push compiles the app and runs the report tests, because the report
+# numbers are the only thing in this app a clinician reads. A wrong accuracy
+# figure does not crash and does not look wrong on screen -- it just quietly
+# tells a speech therapist the wrong thing.
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build and test for iOS Simulator
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Select Xcode (26+ required for App Store uploads)
+        run: |
+          echo "=== Available Xcode ==="
+          ls -d /Applications/Xcode*.app 2>/dev/null || echo "(none found)"
+          for xc in /Applications/Xcode*.app; do
+            if sudo xcode-select -s "$xc/Contents/Developer" 2>/dev/null; then
+              sdk=$(xcrun --sdk iphoneos --show-sdk-version 2>/dev/null || echo "unknown")
+              echo "  $xc -> iOS SDK $sdk"
+              if [[ "$sdk" == 2[6-9].* ]] || [[ "$sdk" == [3-9]* ]]; then
+                echo "Selected: $xc (iOS SDK $sdk)"
+                xcodebuild -version
+                exit 0
+              fi
+            fi
+          done
+          echo "No Xcode with SDK 26+ found -- falling back"
+          xcodebuild -version
+
+      - name: Install xcodegen
+        run: |
+          brew install xcodegen 2>/dev/null || brew upgrade xcodegen 2>/dev/null
+          xcodegen --version
+
+      - name: Generate Xcode project
+        run: |
+          rm -rf Carryover.xcodeproj
+          xcodegen generate
+
+      - name: Ensure the iOS platform is installed
+        run: |
+          sudo xcodebuild -license accept 2>&1 || true
+          sudo xcodebuild -runFirstLaunch 2>&1 || true
+          for i in 1 2 3; do
+            echo "Attempt $i..."
+            sudo xcodebuild -downloadPlatform iOS -quiet 2>&1 && break
+            echo "Attempt $i failed, sleeping 15s..."
+            sleep 15
+          done
+          xcodebuild -version
+          xcrun --sdk iphoneos --show-sdk-version || echo "iphoneos SDK not found"
+
+      - name: Build for Simulator
+        run: |
+          # Unsigned on purpose. This step answers "does it compile", and pulling
+          # signing credentials in would make a code error and a certificate
+          # problem look identical.
+          #
+          # The log goes to a file rather than straight through xcpretty, because
+          # xcpretty drops the body of tool errors and the body is the only part
+          # worth reading.
+          set +e
+          xcodebuild build \
+            -project Carryover.xcodeproj \
+            -scheme Carryover \
+            -sdk iphonesimulator \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO \
+            > build.log 2>&1
+          status=$?
+          set -e
+
+          if [ $status -ne 0 ]; then
+            echo "::group::errors"
+            grep -nE "error:|error :|fatal" build.log | head -60 || true
+            echo "::endgroup::"
+            echo "::group::last 120 lines of the raw log"
+            tail -120 build.log
+            echo "::endgroup::"
+            exit $status
+          fi
+          grep -cE "warning:" build.log || true
+
+      - name: Run unit tests
+        run: |
+          # The simulator is found rather than named. Pinning "iPhone 16" works
+          # until the runner's device list changes, and the failure then reads
+          # like a test failure instead of a missing device.
+          UDID=$(xcrun simctl list devices available \
+            | grep -m1 -E "iPhone" \
+            | grep -oE "[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}")
+          if [ -z "$UDID" ]; then
+            echo "::error::no available iPhone simulator on this runner"
+            xcrun simctl list devices available
+            exit 1
+          fi
+          echo "Using simulator $UDID"
+
+          set +e
+          xcodebuild test \
+            -project Carryover.xcodeproj \
+            -scheme Carryover \
+            -destination "id=$UDID" \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO \
+            > test.log 2>&1
+          status=$?
+          set -e
+
+          grep -nE "error:|failed|XCTAssert" test.log | head -40 || true
+          if [ $status -ne 0 ]; then
+            echo "::group::last 140 lines"
+            tail -140 test.log
+            echo "::endgroup::"
+            exit $status
+          fi
+          grep -E "Test Suite|Executed .* test" test.log | tail -20 || true
+
+      - name: Upload logs (on failure)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-logs
+          path: |
+            build.log
+            test.log
+          retention-days: 7
