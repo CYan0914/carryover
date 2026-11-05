@@ -467,10 +467,19 @@ jobs:
               xcrun simctl terminate "$udid" com.cyan0914.carryover > /dev/null 2>&1 || true
               xcrun simctl launch "$udid" com.cyan0914.carryover \
                 -CarryoverDemo -CarryoverDemoScreen "$screen" > /dev/null
-              # The report screen has to lay out a table; a fixed short wait
-              # gets a half-drawn frame.
-              sleep 4
+              # A short wait gets a half-drawn frame: the report table is still
+              # laying out, and the practice screen has just finished sliding in
+              # its full-screen cover. A single shot at 4 seconds caught exactly
+              # that, with the result buttons mid-interpolation.
+              #
+              # So: wait, throw one frame away, wait again, keep the second.
+              # simctl writes whole frames but it will happily write a frame the
+              # app is still animating toward.
+              sleep 5
+              xcrun simctl io "$udid" screenshot "$tmp/${slug}-${screen}-throwaway.png" > /dev/null
+              sleep 2
               xcrun simctl io "$udid" screenshot "$tmp/${slug}-${screen}.png"
+              rm -f "$tmp/${slug}-${screen}-throwaway.png"
               echo "  $screen -> $(file -b "$tmp/${slug}-${screen}.png")"
             done
 
