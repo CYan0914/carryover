@@ -1,7 +1,7 @@
-// XcodeGen spec. `xcodegen generate` writes Carryover.xcodeproj from this file.
-//
-// The project file is generated rather than committed, so this file is the
-// single source of truth for every build setting.
+# XcodeGen spec. `xcodegen generate` writes Carryover.xcodeproj from this file.
+#
+# The project file is generated rather than committed, so this file is the
+# single source of truth for every build setting.
 name: Carryover
 options:
   bundleIdPrefix: com.cyan0914
