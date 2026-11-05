@@ -21,6 +21,11 @@ on:
         required: false
         default: false
         type: boolean
+      screenshots:
+        description: 'Capture App Store screenshots (6.9" iPhone + 13" iPad)'
+        required: false
+        default: false
+        type: boolean
   push:
     branches: [main, master]
 
@@ -31,7 +36,9 @@ concurrency:
 jobs:
   build:
     name: Build and test for iOS Simulator
-    if: github.event_name == 'push' || github.event.inputs.create_ipa != 'true'
+    if: |
+      github.event_name == 'push' ||
+      (github.event.inputs.create_ipa != 'true' && github.event.inputs.screenshots != 'true')
     runs-on: macos-latest
 
     steps:
@@ -343,3 +350,138 @@ jobs:
             --apiIssuer "$APPSTORE_ISSUER_ID" \
             --type ios \
             --verbose 2>&1
+
+  # ─── App Store screenshots (manual, screenshots=true) ─────────────────────
+  #
+  # This project is developed on a Windows machine with no Xcode, so the only
+  # machine that can run the app is a runner. Launching it with -CarryoverDemo
+  # seeds a two-week fixture and -CarryoverDemoScreen picks the screen, both
+  # behind #if DEBUG, so none of it compiles into the Release build.
+  #
+  # App Store Connect wants a 6.9" iPhone set and a 13" iPad set. The device
+  # types are looked up rather than hardcoded because they change with each
+  # Xcode release and a missing device would read like a broken app.
+  screenshots:
+    name: Capture App Store screenshots
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.screenshots == 'true'
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Select Xcode (26+ required for App Store uploads)
+        run: |
+          for xc in /Applications/Xcode*.app; do
+            if sudo xcode-select -s "$xc/Contents/Developer" 2>/dev/null; then
+              sdk=$(xcrun --sdk iphoneos --show-sdk-version 2>/dev/null || echo "unknown")
+              if [[ "$sdk" == 2[6-9].* ]] || [[ "$sdk" == [3-9]* ]]; then
+                echo "Selected: $xc (iOS SDK $sdk)"
+                xcodebuild -version
+                exit 0
+              fi
+            fi
+          done
+          xcodebuild -version
+
+      - name: Install xcodegen
+        run: |
+          brew install xcodegen 2>/dev/null || brew upgrade xcodegen 2>/dev/null
+          xcodegen --version
+
+      - name: Generate Xcode project
+        run: |
+          rm -rf Carryover.xcodeproj
+          xcodegen generate
+
+      - name: Ensure the iOS platform is installed
+        run: |
+          sudo xcodebuild -license accept 2>&1 || true
+          sudo xcodebuild -runFirstLaunch 2>&1 || true
+          for i in 1 2 3; do
+            sudo xcodebuild -downloadPlatform iOS -quiet 2>&1 && break
+            sleep 15
+          done
+          xcrun --sdk iphonesimulator --show-sdk-version || true
+
+      - name: Build for Simulator
+        run: |
+          set +e
+          xcodebuild build \
+            -project Carryover.xcodeproj \
+            -scheme Carryover \
+            -configuration Debug \
+            -sdk iphonesimulator \
+            -derivedDataPath build \
+            CODE_SIGN_IDENTITY="" CODE_SIGNING_REQUIRED=NO CODE_SIGNING_ALLOWED=NO \
+            > shot-build.log 2>&1
+          status=$?
+          set -e
+          if [ $status -ne 0 ]; then
+            grep -nE "error:" shot-build.log | head -40 || true
+            tail -60 shot-build.log
+            exit $status
+          fi
+          find build/Build/Products -name "Carryover.app" -maxdepth 4
+
+      - name: Capture
+        run: |
+          set -e
+          APP=$(find build/Build/Products -name "Carryover.app" -maxdepth 4 | head -1)
+          echo "app: $APP"
+
+          RUNTIME=$(xcrun simctl list runtimes --json \
+            | python3 -c "import json,sys; r=[x for x in json.load(sys.stdin)['runtimes'] if x['platform']=='iOS' and x['isAvailable']]; print(r[-1]['identifier'])")
+          echo "runtime: $RUNTIME"
+
+          pick_type() {
+            # First devicetype identifier matching the pattern, newest Xcode first.
+            xcrun simctl list devicetypes --json \
+              | python3 -c "import json,sys,re; d=json.load(sys.stdin)['devicetypes']; m=[x for x in d if re.search(sys.argv[1], x['name'])]; print(m[0]['identifier'] if m else '')" "$1"
+          }
+
+          IPHONE_TYPE=$(pick_type '^iPhone 1[6-9] Pro Max$')
+          [ -z "$IPHONE_TYPE" ] && IPHONE_TYPE=$(pick_type '^iPhone 1[5-9].*Max$')
+          IPAD_TYPE=$(pick_type '^iPad Pro 13-inch')
+          [ -z "$IPAD_TYPE" ] && IPAD_TYPE=$(pick_type '^iPad Pro 12.9-inch')
+          echo "iphone type: $IPHONE_TYPE"
+          echo "ipad type:   $IPAD_TYPE"
+
+          shoot() {
+            local type="$1" slug="$2" tmp="$3"
+            local udid
+            udid=$(xcrun simctl create "carryover-$slug" "$type" "$RUNTIME")
+            echo "== $slug device $udid"
+            xcrun simctl boot "$udid"
+            xcrun simctl bootstatus "$udid" -b > /dev/null 2>&1 || true
+            xcrun simctl status_bar "$udid" override \
+              --time "9:41" --batteryState charged --batteryLevel 100 \
+              --wifiBars 3 --cellularBars 4 > /dev/null 2>&1 || true
+            xcrun simctl install "$udid" "$APP"
+
+            for screen in onboarding home practice report paywall; do
+              xcrun simctl terminate "$udid" com.cyan0914.carryover > /dev/null 2>&1 || true
+              xcrun simctl launch "$udid" com.cyan0914.carryover \
+                -CarryoverDemo -CarryoverDemoScreen "$screen" > /dev/null
+              # The report screen has to lay out a table; a fixed short wait
+              # gets a half-drawn frame.
+              sleep 4
+              xcrun simctl io "$udid" screenshot "$tmp/${slug}-${screen}.png"
+              echo "  $screen -> $(file -b "$tmp/${slug}-${screen}.png")"
+            done
+
+            xcrun simctl shutdown "$udid" > /dev/null 2>&1 || true
+            xcrun simctl delete "$udid" > /dev/null 2>&1 || true
+          }
+
+          mkdir -p shots
+          [ -n "$IPHONE_TYPE" ] && shoot "$IPHONE_TYPE" iphone69 shots
+          [ -n "$IPAD_TYPE" ] && shoot "$IPAD_TYPE" ipad13 shots
+          ls -la shots
+
+      - name: Upload screenshots
+        uses: actions/upload-artifact@v4
+        with:
+          name: appstore-screenshots
+          path: shots/*.png
+          retention-days: 30

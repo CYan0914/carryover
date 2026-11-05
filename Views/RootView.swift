@@ -16,19 +16,25 @@ struct RootView: View {
 }
 
 struct MainTabView: View {
+    @State private var selection = DemoFlags.initialTab
+
     var body: some View {
-        TabView {
+        TabView(selection: $selection) {
             HomeView()
                 .tabItem { Label("Practice", systemImage: "waveform") }
+                .tag(0)
 
             TargetsView()
                 .tabItem { Label("Words", systemImage: "list.bullet") }
+                .tag(1)
 
             ReportView()
                 .tabItem { Label("Report", systemImage: "doc.text") }
+                .tag(2)
 
             SettingsView()
                 .tabItem { Label("Settings", systemImage: "gearshape") }
+                .tag(3)
         }
     }
 }

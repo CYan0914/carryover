@@ -50,6 +50,18 @@ final class AppStore: ObservableObject {
         return dir.appendingPathComponent("data.json")
     }
 
+    #if DEBUG
+    /// A store that starts from a fixture instead of whatever is on disk, in a
+    /// throwaway file so a screenshot run never touches real data.
+    convenience init(demo state: AppState) {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("carryover-demo-\(UUID().uuidString).json")
+        self.init(fileURL: url)
+        self.state = state
+        self.write()
+    }
+    #endif
+
     // MARK: - Derived
 
     var hasTargets: Bool { !state.targets.isEmpty }

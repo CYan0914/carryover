@@ -52,6 +52,12 @@ struct HomeView: View {
             .sheet(isPresented: $showPaywall) {
                 PaywallView { showPaywall = false }
             }
+            .onAppear {
+                // Screenshot runs only. No effect in Release: both flags are
+                // false unless the demo launch argument is present.
+                if DemoFlags.opensPractice { isPracticing = true }
+                if DemoFlags.opensPaywall { showPaywall = true }
+            }
         }
     }
 
