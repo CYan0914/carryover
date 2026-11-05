@@ -29,9 +29,13 @@ on:
   push:
     branches: [main, master]
 
+# The group is keyed by which job the run is for. A plain push and a manual
+# screenshot or TestFlight run are three different things that happen to share
+# a branch, and cancelling across them loses a 25-minute simulator run to an
+# unrelated one-line docs commit.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ (github.event.inputs.create_ipa == 'true' && 'ipa') || (github.event.inputs.screenshots == 'true' && 'shots') || 'default' }}
+  cancel-in-progress: ${{ github.event_name == 'push' }}
 
 jobs:
   build:
