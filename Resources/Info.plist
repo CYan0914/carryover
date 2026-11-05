@@ -4,8 +4,11 @@
 <dict>
 	<key>CFBundleDevelopmentRegion</key>
 	<string>en</string>
+	<!-- "Speech Practice" alone is already taken on the App Store, so the
+	     registered name is "Carryover: Speech Practice". The home screen label
+	     stays short. -->
 	<key>CFBundleDisplayName</key>
-	<string>Speech Practice</string>
+	<string>Carryover</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>

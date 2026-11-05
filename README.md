@@ -2,7 +2,7 @@
 
 Home practice for speech therapy, with the results going back to the therapist.
 
-**App Store display name:** Speech Practice
+**App Store display name:** Carryover: Speech Practice
 **Bundle id:** `com.cyan0914.carryover`
 **Price:** $3.99 one-time. No subscription.
 
@@ -97,16 +97,17 @@ Run `xcodegen generate` to produce `Carryover.xcodeproj`.
 
 ## Roadmap, in order
 
-1. **Compile and run on a simulator.** Nothing here has been built yet — the
-   first CI run on `main` is the first real check.
+1. ~~**Compile and run on a simulator.**~~ Done: CI run 41980201951 builds clean
+   and runs 11 unit tests, 0 failures.
 2. **Find one SLP to read the PDF layout.** This is the single cheapest
    credibility buy, and the report is the product. If a therapist says "I
    would not read this", the layout changes before anything else is built.
-3. **App Store Connect:** register the bundle id, create the non-consumable
-   product `com.cyan0914.carryover.full` at $3.99, add the archive job.
-4. **ASO.** Display name "Speech Practice", subtitle "Home carryover for
-   speech therapy". Keyword field targets parent language
-   (`speech,delay,toddler,apraxia,articulation,late,talker,practice,therapy,home,carryover,slp`).
+3. ~~**App Store Connect:** register the bundle id, create the non-consumable
+   product~~ Done: app record `6831020269`, IAP `6831020655` at $3.99, en-US
+   localization set. Still missing: the archive job and a distribution
+   certificate/profile for TestFlight.
+4. **ASO.** Display name "Carryover: Speech Practice", subtitle targets parent
+   language (`speech,delay,toddler,apraxia,articulation,late,talker,practice,therapy,home,carryover,slp`).
 5. **Distribution.** The growth loop is the therapist, not the App Store:
    every PDF footer is the ad. Add a line to the PDF: "Made with Carryover"
    plus the App Store short link, once the app exists.
