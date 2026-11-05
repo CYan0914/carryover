@@ -20,11 +20,13 @@ final class PurchaseManager: ObservableObject {
     private let productID = Billing.unlockProductID
 
     func loadProduct() async {
-        do {
-            let products = try await Product.products(for: [productID])
+        // Deliberately quiet on failure. This runs at launch, and before the
+        // product exists in App Store Connect `Product.products(for:)` returns
+        // an empty array with no error at all — surfacing that as "could not
+        // reach the App Store" would accuse the network of a setup mistake.
+        // Only an explicit purchase attempt reports an error.
+        if let products = try? await Product.products(for: [productID]) {
             product = products.first
-        } catch {
-            errorMessage = "Could not reach the App Store. You can try again later."
         }
     }
 

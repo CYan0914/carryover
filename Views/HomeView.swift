@@ -148,8 +148,6 @@ struct HomeView: View {
                     .textCase(.uppercase)
                     .kerning(0.6)
                 Spacer()
-                NavigationLink("Report") { ReportView() }
-                    .font(.system(size: 13, weight: .semibold))
             }
 
             let stats = store.report(days: 7)
