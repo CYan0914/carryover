@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- Not "app-store". Xcode 26 reports the old name as deprecated. -->
+	<key>method</key>
+	<string>app-store-connect</string>
+	<key>teamID</key>
+	<string>H4VQ9X6KYK</string>
+
+	<!-- Manual. Automatic export asks App Store Connect for a
+	     DISTRIBUTION_MANAGED certificate, and an API-key session is refused
+	     that endpoint with 403 / resultCode 7495. So the identity is imported
+	     into the runner's keychain by the workflow and named here. -->
+	<key>signingStyle</key>
+	<string>manual</string>
+	<key>signingCertificate</key>
+	<string>Apple Distribution</string>
+
+	<!-- Keyed by bundle id. This app has one target, so one entry. -->
+	<key>provisioningProfiles</key>
+	<dict>
+		<key>com.cyan0914.carryover</key>
+		<string>Carryover App Store</string>
+	</dict>
+
+	<!-- Upload is a separate, explicit step: a failed upload should not look
+	     like a failed export. -->
+	<key>uploadToAppStore</key>
+	<false/>
+	<key>stripSwiftSymbols</key>
+	<true/>
+	<key>uploadSymbols</key>
+	<true/>
+	<!-- Off because the archive step already stamps CURRENT_PROJECT_VERSION
+	     with the run number; letting export rewrite it would upload a build
+	     whose number does not match the one the archive carried. -->
+	<key>manageAppVersionAndBuildNumber</key>
+	<false/>
+</dict>
+</plist>

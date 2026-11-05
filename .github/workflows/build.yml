@@ -1,18 +1,26 @@
 name: Build Carryover
 
-# Compile check and unit tests only.
+# Two jobs in one file, for the same reason Hearth keeps them together: a
+# compile check and an archive that live in separate workflows are two things
+# to watch, and the failure mode is watching the wrong one and believing a
+# build succeeded.
 #
-# There is deliberately no archive job yet: the App ID and the StoreKit product
-# do not exist in App Store Connect, so a signed build would fail on something
-# that is not a code problem. Add that job once the bundle id is registered.
+# The archive job only runs when create_ipa is explicitly true, so a plain
+# dispatch stays a cheap simulator compile.
 #
-# Every push compiles the app and runs the report tests, because the report
-# numbers are the only thing in this app a clinician reads. A wrong accuracy
-# figure does not crash and does not look wrong on screen -- it just quietly
-# tells a speech therapist the wrong thing.
+# Every push also runs the report tests, because the report numbers are the
+# only thing in this app a clinician reads. A wrong accuracy figure does not
+# crash and does not look wrong on screen -- it just quietly tells a speech
+# therapist the wrong thing.
 
 on:
   workflow_dispatch:
+    inputs:
+      create_ipa:
+        description: 'Build a signed IPA and upload it to TestFlight'
+        required: false
+        default: false
+        type: boolean
   push:
     branches: [main, master]
 
@@ -23,6 +31,7 @@ concurrency:
 jobs:
   build:
     name: Build and test for iOS Simulator
+    if: github.event_name == 'push' || github.event.inputs.create_ipa != 'true'
     runs-on: macos-latest
 
     steps:
@@ -147,3 +156,190 @@ jobs:
             build.log
             test.log
           retention-days: 7
+
+  # ─── Signed IPA → TestFlight (manual, create_ipa=true) ────────────────────
+  #
+  # Signing is manual on purpose. Xcode's automatic export asks App Store
+  # Connect for a DISTRIBUTION_MANAGED (cloud-managed) certificate, and an
+  # API-key session is refused:
+  #
+  #   POST appstoreconnect.apple.com/xcbuild/v1/certificates
+  #        filter[certificateType]=DISTRIBUTION_MANAGED
+  #   -> 403 FORBIDDEN_ERROR, resultCode 7495
+  #
+  # So the identity and the profile are written onto the runner instead, and
+  # both signing steps run manual with no -allowProvisioningUpdates.
+  archive:
+    name: Archive and upload to TestFlight
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.create_ipa == 'true'
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Select Xcode (26+ required for App Store uploads)
+        run: |
+          for xc in /Applications/Xcode*.app; do
+            if sudo xcode-select -s "$xc/Contents/Developer" 2>/dev/null; then
+              sdk=$(xcrun --sdk iphoneos --show-sdk-version 2>/dev/null || echo "unknown")
+              if [[ "$sdk" == 2[6-9].* ]] || [[ "$sdk" == [3-9]* ]]; then
+                echo "Selected: $xc (iOS SDK $sdk)"
+                xcodebuild -version
+                exit 0
+              fi
+            fi
+          done
+          echo "No Xcode with SDK 26+ found -- falling back"
+          xcodebuild -version
+
+      - name: Install xcodegen
+        run: |
+          brew install xcodegen 2>/dev/null || brew upgrade xcodegen 2>/dev/null
+          xcodegen --version
+
+      - name: Generate Xcode project
+        run: |
+          rm -rf Carryover.xcodeproj
+          xcodegen generate
+
+      - name: Ensure the iOS platform is installed
+        run: |
+          sudo xcodebuild -license accept 2>&1 || true
+          sudo xcodebuild -runFirstLaunch 2>&1 || true
+          for i in 1 2 3; do
+            sudo xcodebuild -downloadPlatform iOS -quiet 2>&1 && break
+            sleep 15
+          done
+          xcrun --sdk iphoneos --show-sdk-version || echo "iphoneos SDK not found"
+
+      - name: Import distribution identity
+        env:
+          DIST_CERT_P12: ${{ secrets.DIST_CERT_P12 }}
+          DIST_CERT_PASSWORD: ${{ secrets.DIST_CERT_PASSWORD }}
+          DIST_PROFILE: ${{ secrets.DIST_PROFILE }}
+        run: |
+          set -e
+          if [ -z "$DIST_CERT_P12" ]; then
+            echo "::error::DIST_CERT_P12 is not set -- cannot sign for distribution."
+            exit 1
+          fi
+
+          mkdir -p ~/Library/MobileDevice/Provisioning\ Profiles
+          printf '%s' "$DIST_PROFILE" | base64 --decode \
+            > ~/Library/MobileDevice/Provisioning\ Profiles/carryover.mobileprovision
+          echo "profile bytes: $(wc -c < ~/Library/MobileDevice/Provisioning\ Profiles/carryover.mobileprovision)"
+
+          printf '%s' "$DIST_CERT_P12" | base64 --decode > /tmp/dist.p12
+          echo "p12: ${#DIST_CERT_P12} chars -> $(wc -c < /tmp/dist.p12) bytes"
+
+          security create-keychain -p "" build.keychain
+          security set-keychain-settings -lut 3600 build.keychain
+          security unlock-keychain -p "" build.keychain
+          security default-keychain -s build.keychain
+          security list-keychains -d user -s build.keychain $(security list-keychains -d user | tr -d '"')
+
+          # -T plus set-key-partition-list is what stops macOS putting up a GUI
+          # prompt nobody can answer on a headless runner; without it codesign
+          # fails with errSecInternalComponent several steps later.
+          if ! security import /tmp/dist.p12 -k build.keychain \
+            -P "$DIST_CERT_PASSWORD" \
+            -T /usr/bin/codesign -T /usr/bin/security -T /usr/bin/productbuild; then
+            echo "::error::Could not import the distribution p12."
+            exit 1
+          fi
+          security set-key-partition-list -S apple-tool:,apple:,codesign: \
+            -s -k "" build.keychain > /dev/null
+          rm -f /tmp/dist.p12
+
+          security find-identity -v -p codesigning build.keychain
+          # Assert it here rather than let the archive report the absence in
+          # its own words. find-identity drops identities whose chain does not
+          # validate, so this also catches a p12 imported without the WWDR
+          # intermediate.
+          if ! security find-identity -v -p codesigning build.keychain \
+               | grep -q "Apple Distribution"; then
+            echo "::error::No 'Apple Distribution' identity after import."
+            exit 1
+          fi
+
+      - name: Archive
+        env:
+          DIST_PROFILE_SPECIFIER: ${{ secrets.DIST_PROFILE_SPECIFIER }}
+        run: |
+          BUILD_NUM=${{ github.run_number }}
+          echo "Using build number $BUILD_NUM"
+
+          # No -allowProvisioningUpdates and no -authenticationKey*: those exist
+          # to let Xcode create things through App Store Connect, which is the
+          # path the API key is refused. Everything needed is on disk.
+          xcodebuild archive \
+            -project Carryover.xcodeproj \
+            -scheme Carryover \
+            -configuration Release \
+            -sdk iphoneos \
+            -archivePath Carryover.xcarchive \
+            CODE_SIGN_STYLE=Manual \
+            CODE_SIGN_IDENTITY="Apple Distribution" \
+            PROVISIONING_PROFILE_SPECIFIER="$DIST_PROFILE_SPECIFIER" \
+            DEVELOPMENT_TEAM=H4VQ9X6KYK \
+            CURRENT_PROJECT_VERSION="$BUILD_NUM"
+
+          # Read the signature back off the binary rather than trusting the
+          # settings above. The failure this replaces was an archive signed
+          # with a development identity that looked fine until export.
+          codesign -dv --verbose=4 \
+            Carryover.xcarchive/Products/Applications/Carryover.app 2>&1 \
+            | grep -E "Authority|Identifier|TeamIdentifier" || true
+          if ! codesign -dv --verbose=4 \
+               Carryover.xcarchive/Products/Applications/Carryover.app 2>&1 \
+               | grep -q "Authority=Apple Distribution"; then
+            echo "::error::Archive is not signed with an Apple Distribution identity."
+            exit 1
+          fi
+
+      - name: Export IPA
+        run: |
+          set +e
+          xcodebuild -exportArchive \
+            -archivePath Carryover.xcarchive \
+            -exportPath ./ipa \
+            -exportOptionsPlist ExportOptions.plist \
+            > export.log 2>&1
+          status=$?
+          set -e
+
+          if [ $status -ne 0 ]; then
+            echo "::group::export errors"
+            grep -nE "error|warning: .*(profile|certificate)" export.log | head -40 || true
+            echo "::endgroup::"
+            echo "::group::what the export was told to do"
+            cat ExportOptions.plist
+            echo "::endgroup::"
+            tail -60 export.log
+            exit $status
+          fi
+          tail -20 export.log
+          ls -la ipa/
+
+      - name: Upload IPA as an artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: carryover-ipa
+          path: ipa/Carryover.ipa
+          retention-days: 30
+
+      - name: Upload to TestFlight
+        env:
+          APPSTORE_KEY_ID: ${{ secrets.APPSTORE_KEY_ID }}
+          APPSTORE_ISSUER_ID: ${{ secrets.APPSTORE_ISSUER_ID }}
+          APPSTORE_API_KEY: ${{ secrets.APPSTORE_API_KEY }}
+        run: |
+          mkdir -p ~/private_keys
+          echo "$APPSTORE_API_KEY" > ~/private_keys/AuthKey_${APPSTORE_KEY_ID}.p8
+          xcrun altool --upload-app \
+            -f "ipa/Carryover.ipa" \
+            --apiKey "$APPSTORE_KEY_ID" \
+            --apiIssuer "$APPSTORE_ISSUER_ID" \
+            --type ios \
+            --verbose 2>&1
