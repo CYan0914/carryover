@@ -22,10 +22,15 @@ struct CarryoverApp: App {
                 .tint(DS.accent)
                 .preferredColorScheme(.light)
                 .task {
-                    await purchases.loadProduct()
+                    // Both calls are capped inside PurchaseManager, so this
+                    // task cannot outlive the first screen for long. Running
+                    // them together keeps the launch path to one timeout
+                    // instead of two.
+                    async let loading: Void = purchases.loadProduct()
                     if await purchases.refreshEntitlement() {
                         store.setUnlocked(true)
                     }
+                    await loading
                 }
         }
     }

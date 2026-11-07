@@ -32,10 +32,19 @@ struct SettingsView: View {
                     HStack {
                         Text("Full version")
                         Spacer()
-                        Text(store.state.isUnlocked ? "Unlocked" : "Not unlocked")
-                            .foregroundStyle(store.state.isUnlocked ? DS.good : DS.inkMuted)
+                        if store.state.isUnlocked {
+                            Text("Unlocked").foregroundStyle(DS.good)
+                        } else if !purchases.entitlementChecked {
+                            // StoreKit is still answering. Showing "Not
+                            // unlocked" here for a second and then flipping to
+                            // "Unlocked" reads as the app granting itself a
+                            // purchase.
+                            Text("Checking…").foregroundStyle(DS.inkMuted)
+                        } else {
+                            Text("Not unlocked").foregroundStyle(DS.inkMuted)
+                        }
                     }
-                    if !store.state.isUnlocked {
+                    if !store.state.isUnlocked && purchases.entitlementChecked {
                         Button("Unlock for \(purchases.displayPrice)") {
                             Task {
                                 if await purchases.purchase() {

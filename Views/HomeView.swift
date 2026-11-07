@@ -30,7 +30,7 @@ struct HomeView: View {
                         recentCard
                     }
 
-                    if !store.state.isUnlocked {
+                    if !store.state.isUnlocked && purchases.entitlementChecked {
                         freeTierNote
                     }
                 }
@@ -127,11 +127,7 @@ struct HomeView: View {
             }
 
             Button {
-                if store.needsUnlock {
-                    showPaywall = true
-                } else {
-                    isPracticing = true
-                }
+                Task { await startTapped() }
             } label: {
                 Text("Start 5 minutes")
             }
@@ -143,6 +139,22 @@ struct HomeView: View {
                 .frame(maxWidth: .infinity, alignment: .center)
         }
         .card()
+    }
+
+    /// A tap that lands before the launch entitlement check has finished would
+    /// otherwise send a paying customer to the paywall. Wait for that one
+    /// answer first, then decide.
+    private func startTapped() async {
+        if !store.state.isUnlocked && !purchases.entitlementChecked {
+            if await purchases.refreshEntitlement() {
+                store.setUnlocked(true)
+            }
+        }
+        if store.needsUnlock {
+            showPaywall = true
+        } else {
+            isPracticing = true
+        }
     }
 
     private var recentCard: some View {

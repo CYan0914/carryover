@@ -196,11 +196,7 @@ struct ReportView: View {
     private var exportButton: some View {
         VStack(spacing: 8) {
             Button {
-                if store.needsUnlock {
-                    showPaywall = true
-                } else {
-                    buildPDF()
-                }
+                Task { await exportTapped() }
             } label: {
                 HStack(spacing: 8) {
                     if isBuilding {
@@ -234,6 +230,19 @@ struct ReportView: View {
         if value >= 0.8 { return DS.good }
         if value >= 0.5 { return DS.close }
         return DS.miss
+    }
+
+    private func exportTapped() async {
+        if !store.state.isUnlocked && !purchases.entitlementChecked {
+            if await purchases.refreshEntitlement() {
+                store.setUnlocked(true)
+            }
+        }
+        if store.needsUnlock {
+            showPaywall = true
+        } else {
+            buildPDF()
+        }
     }
 
     private func buildPDF() {
