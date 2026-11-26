@@ -65,6 +65,14 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.cyan0914.carryover
         INFOPLIST_FILE: Resources/Info.plist
         GENERATE_INFOPLIST_FILE: NO
+        # Signing lives on the target, not on the xcodebuild command line.
+        # A command-line CODE_SIGN_STYLE / PROVISIONING_PROFILE_SPECIFIER
+        # applies to every target in the graph, including the RevenueCat SPM
+        # package, which has no provisioning profile and fails the archive
+        # with "does not support provisioning profiles".
+        CODE_SIGN_STYLE: Manual
+        CODE_SIGN_IDENTITY: "Apple Distribution"
+        PROVISIONING_PROFILE_SPECIFIER: "$(DIST_PROFILE_SPECIFIER)"
         # Ship an Apple Watch companion later; for now iPhone and iPad only.
         SUPPORTS_MACCATALYST: NO
         SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD: NO
