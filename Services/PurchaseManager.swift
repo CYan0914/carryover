@@ -62,7 +62,10 @@ final class PurchaseManager: ObservableObject {
     }
 
     func loadProduct() async {
-        if product != nil { return }
+        // In the RC path `product` stays nil and the package is what we
+        // actually have, so checking only `product` would re-fetch offerings
+        // every time the paywall opens.
+        if product != nil || package != nil { return }
         if let existing = loadTask {
             product = await existing.value
             return
