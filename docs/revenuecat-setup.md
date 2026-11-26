@@ -26,8 +26,9 @@ In the same RC app page, open the **Apple App Store** integration:
    **Non-consumable**, price from App Store Connect.
 3. Create an **Entitlement** with identifier exactly `unlock` (this is the
    value in `Core/Billing.swift`) and attach the product to it.
-4. Put that entitlement into the **Offering** RC serves as `current`. If it is
-   not in the current offering, the paywall has no package to show.
+4. In **Product catalog → Offerings**, put that product into the offering
+   marked **Current**. The app fetches `offerings().current`, so if the product
+   is not there the paywall has no package to buy.
 5. Enable **Server Notifications** with the Sandbox URL RC gives you, and add
    the same URL in App Store Connect → the app → App Information.
 
