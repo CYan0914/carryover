@@ -132,7 +132,13 @@ final class PurchaseManager: ObservableObject {
             // network.
             let result = try await Purchases.shared.purchase(package: package)
             if result.userCancelled { return false }
-            return isUnlocked(in: result.customerInfo)
+            if isUnlocked(in: result.customerInfo) { return true }
+            // A completed transaction means Apple charged the customer. If the
+            // RC dashboard is missing the entitlement or the product is not
+            // attached to it, this must still unlock — otherwise the customer
+            // pays and the app stays locked.
+            if result.transaction != nil { return true }
+            return false
         } catch {
             errorMessage = "Purchase failed. Please try again."
             return false
@@ -177,7 +183,9 @@ final class PurchaseManager: ObservableObject {
         let found = await withTimeout(seconds: Self.timeout) { () -> Bool in
             if useRC {
                 let info = try? await Purchases.shared.customerInfo()
-                return info.map { isUnlocked(in: $0) } ?? false
+                return info.map {
+                    isUnlocked(in: $0) || $0.allPurchasedProductIdentifiers.contains(id)
+                } ?? false
             }
             for await result in Transaction.currentEntitlements {
                 if case .verified(let transaction) = result,
@@ -201,7 +209,10 @@ final class PurchaseManager: ObservableObject {
         do {
             let info = try await Purchases.shared.restorePurchases()
             entitlementChecked = true
+            // Same fallback as a purchase: the receipt is proof even when the
+            // entitlement is not wired up in the dashboard yet.
             return isUnlocked(in: info)
+                || info.allPurchasedProductIdentifiers.contains(productID)
         } catch {
             errorMessage = "Restore failed. Please try again."
             entitlementChecked = true
