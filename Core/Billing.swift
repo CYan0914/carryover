@@ -12,6 +12,11 @@ enum Billing {
     /// empty array and the paywall shows the fallback price forever.
     static let unlockProductID = "com.cyan0914.carryover.full"
 
+    /// Must match the Entitlement identifier created in RevenueCat. That
+    /// entitlement must contain the product above; if it does not, a successful
+    /// purchase reports as locked even though Apple charged the customer.
+    static let entitlementID = "unlock"
+
     /// Sessions available before the unlock prompt. Five is enough to see the
     /// whole loop, including one full week of practice, and short enough that
     /// a family who is going to pay does it while the habit is fresh.

@@ -58,14 +58,17 @@ workflow it broke.
 ## Architecture
 
 - SwiftUI, iOS 17+, one target plus a unit test target.
-- **No backend.** All data is a single JSON file in Application Support. This
-  is the privacy claim, not a shortcut.
+- **No backend for practice data.** All data is a single JSON file in
+  Application Support. This is the privacy claim, not a shortcut. RevenueCat
+  handles purchase receipts only; it never sees practice data.
 - **No accounts.** Nothing to sign up for, nothing to leak.
 - **No microphone.** `AVSpeechSynthesizer` for playback only. No speech
   recognition, so no `NSMicrophoneUsageDescription` and no
   `NSSpeechRecognitionUsageDescription` in `Info.plist`. That absence is
   load-bearing.
-- StoreKit 2, one non-consumable.
+- StoreKit 2, one non-consumable, purchased through RevenueCat. The RC API key
+  is injected at archive time from the `REVENUECAT_API_KEY` build setting;
+  local and screenshot builds leave it empty and use StoreKit 2 directly.
 
 ```
 CarryoverApp.swift        app entry, environment wiring

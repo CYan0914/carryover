@@ -54,7 +54,7 @@ struct SettingsView: View {
                         }
                         Button("Restore purchase") {
                             Task {
-                                if await purchases.refreshEntitlement() {
+                                if await purchases.restore() {
                                     store.setUnlocked(true)
                                 }
                             }
@@ -93,7 +93,7 @@ struct SettingsView: View {
                 }
 
                 Section {
-                    Text("This app does not use a microphone, does not run speech recognition, and does not send any data off this device. It records what a parent tapped.")
+                    Text("This app does not use a microphone and does not run speech recognition. Practice records never leave this device. Only purchase receipts are verified with RevenueCat.")
                         .font(.system(size: 13))
                         .foregroundStyle(DS.inkMuted)
 

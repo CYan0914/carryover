@@ -123,7 +123,7 @@ struct PaywallView: View {
             "No $14.99 a month",
             "No free trial that charges you before it ends",
             "No per-child or per-sound add-ons",
-            "No advertising, no analytics SDK, no data sale",
+            "No advertising, no tracking of what you practise, no data sale",
             "No account to create, and nothing to forget the password to"
         ]
     }
@@ -154,7 +154,7 @@ struct PaywallView: View {
 
     private func restore() async {
         isWorking = true
-        let ok = await purchases.refreshEntitlement()
+        let ok = await purchases.restore()
         isWorking = false
         if ok {
             store.setUnlocked(true)

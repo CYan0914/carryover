@@ -48,6 +48,10 @@
 	     answer at every single App Store submission. -->
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
+	<!-- Empty in local and screenshot builds. CI fills this from the
+	     REVENUECAT_API_KEY build setting for the signed archive. -->
+	<key>RevenueCatAPIKey</key>
+	<string>$(REVENUECAT_API_KEY)</string>
 	<!-- No NSMicrophoneUsageDescription and no NSSpeechRecognitionUsageDescription,
 	     and their absence is intentional: the app is output-only audio via
 	     AVSpeechSynthesizer. Adding either key would invite a reviewer to look

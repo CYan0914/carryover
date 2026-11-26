@@ -11,6 +11,13 @@ options:
   generateEmptyDirectories: true
   groupSortPosition: top
 
+# RevenueCat verifies purchase receipts and reports them to the dashboard.
+# The app never sends practice data through this SDK.
+packages:
+  RevenueCat:
+    url: https://github.com/RevenueCat/purchases-ios-spm
+    from: 5.0.0
+
 settings:
   base:
     SWIFT_VERSION: "5.9"
@@ -19,6 +26,10 @@ settings:
     MARKETING_VERSION: "1.0.0"
     CURRENT_PROJECT_VERSION: "1"
     TARGETED_DEVICE_FAMILY: "1,2"
+    # Empty locally and in screenshot runs: the app skips RevenueCat
+    # configuration when there is no key. CI injects the real key for the
+    # signed archive, so TestFlight and production report purchases.
+    REVENUECAT_API_KEY: ""
 
     # No INFOPLIST_KEY_* settings: GENERATE_INFOPLIST_FILE is NO below and the
     # target points at an explicit file, so those keys would be silently
@@ -36,6 +47,9 @@ targets:
   Carryover:
     type: application
     platform: iOS
+    dependencies:
+      - package: RevenueCat
+        product: RevenueCat
     sources:
       - path: CarryoverApp.swift
       - path: Core

@@ -277,6 +277,7 @@ jobs:
       - name: Archive
         env:
           DIST_PROFILE_SPECIFIER: ${{ secrets.DIST_PROFILE_SPECIFIER }}
+          REVENUECAT_API_KEY: ${{ secrets.REVENUECAT_API_KEY }}
         run: |
           BUILD_NUM=${{ github.run_number }}
           echo "Using build number $BUILD_NUM"
@@ -294,7 +295,8 @@ jobs:
             CODE_SIGN_IDENTITY="Apple Distribution" \
             PROVISIONING_PROFILE_SPECIFIER="$DIST_PROFILE_SPECIFIER" \
             DEVELOPMENT_TEAM=H4VQ9X6KYK \
-            CURRENT_PROJECT_VERSION="$BUILD_NUM"
+            CURRENT_PROJECT_VERSION="$BUILD_NUM" \
+            REVENUECAT_API_KEY="$REVENUECAT_API_KEY"
 
           # Read the signature back off the binary rather than trusting the
           # settings above. The failure this replaces was an archive signed
