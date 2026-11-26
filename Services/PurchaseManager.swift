@@ -28,8 +28,9 @@ final class PurchaseManager: ObservableObject {
     /// StoreKit 2 path, so a demo run never creates a fake customer in RC.
     private let useRevenueCat: Bool
 
-    /// For RC purchases and for the price shown on the paywall.
-    private var package: Package?
+    /// For RC purchases and for the price shown on the paywall. Published so
+    /// the paywall price updates once offerings come back.
+    @Published private(set) var package: Package?
 
     /// The in-flight load, shared between the launch call and the paywall's
     /// `.task`. StoreKit serialises product requests internally, so two
@@ -76,9 +77,11 @@ final class PurchaseManager: ObservableObject {
                 if useRC {
                     let offerings = try? await Purchases.shared.offerings()
                     let found = offerings?.current?.availablePackages.first {
-                        $0.product.productIdentifier == id
+                        $0.storeProduct.productIdentifier == id
                     } ?? offerings?.current?.availablePackages.first
-                    return LoadedProduct(product: found?.product, package: found)
+                    // RC exposes StoreKit 1 SKProduct here; keep it in the
+                    // RC package and read the price from storeProduct instead.
+                    return LoadedProduct(product: nil, package: found)
                 }
                 return LoadedProduct(
                     product: (try? await Product.products(for: [id]))?.first,
@@ -94,7 +97,9 @@ final class PurchaseManager: ObservableObject {
     }
 
     var displayPrice: String {
-        product?.displayPrice ?? "$3.99"
+        package?.storeProduct.localizedPriceString
+            ?? product?.displayPrice
+            ?? "$3.99"
     }
 
     /// Returns true when the unlock is now active.
@@ -124,7 +129,7 @@ final class PurchaseManager: ObservableObject {
             // network.
             let result = try await Purchases.shared.purchase(package: package)
             if result.userCancelled { return false }
-            return Self.isUnlocked(in: result.customerInfo)
+            return isUnlocked(in: result.customerInfo)
         } catch {
             errorMessage = "Purchase failed. Please try again."
             return false
@@ -169,7 +174,7 @@ final class PurchaseManager: ObservableObject {
         let found = await withTimeout(seconds: Self.timeout) { () -> Bool in
             if useRC {
                 let info = try? await Purchases.shared.customerInfo()
-                return info.map { Self.isUnlocked(in: $0) } ?? false
+                return info.map { isUnlocked(in: $0) } ?? false
             }
             for await result in Transaction.currentEntitlements {
                 if case .verified(let transaction) = result,
@@ -193,7 +198,7 @@ final class PurchaseManager: ObservableObject {
         do {
             let info = try await Purchases.shared.restorePurchases()
             entitlementChecked = true
-            return Self.isUnlocked(in: info)
+            return isUnlocked(in: info)
         } catch {
             errorMessage = "Restore failed. Please try again."
             entitlementChecked = true
@@ -201,9 +206,12 @@ final class PurchaseManager: ObservableObject {
         }
     }
 
-    private static func isUnlocked(in info: CustomerInfo) -> Bool {
-        info.entitlements[Billing.entitlementID]?.isActive == true
-    }
+}
+
+/// Free function, not a static member: the class is @MainActor, but this is
+/// called from a @Sendable timeout closure.
+private func isUnlocked(in info: CustomerInfo) -> Bool {
+    info.entitlements[Billing.entitlementID]?.isActive == true
 }
 
 /// Race an operation against a deadline.
