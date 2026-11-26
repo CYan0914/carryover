@@ -347,12 +347,22 @@ jobs:
         run: |
           mkdir -p ~/private_keys
           echo "$APPSTORE_API_KEY" > ~/private_keys/AuthKey_${APPSTORE_KEY_ID}.p8
+          set +e
           xcrun altool --upload-app \
             -f "ipa/Carryover.ipa" \
             --apiKey "$APPSTORE_KEY_ID" \
             --apiIssuer "$APPSTORE_ISSUER_ID" \
             --type ios \
-            --verbose 2>&1
+            --verbose > upload.log 2>&1
+          status=$?
+          set -e
+          tail -40 upload.log
+          # altool has exited 0 while printing "Failed to upload package", so
+          # the exit code alone reports a green run with nothing in TestFlight.
+          if [ $status -ne 0 ] || grep -qE "UPLOAD FAILED|Failed to upload package|Validation failed" upload.log; then
+            echo "::error::TestFlight upload failed -- see the log above."
+            exit 1
+          fi
 
   # ─── App Store screenshots (manual, screenshots=true) ─────────────────────
   #
